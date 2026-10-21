@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>班级信息共享站</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+/* 隐藏 Netlify 免费版自动注入的 "Powered by Netlify" 角标 */
+iframe[src*="netlify"],
+#netlify-badge,
+div[class*="netlify"],
+[data-netlify-badge] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  z-index: -9999 !important;
+  pointer-events: none !important;
+}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
+
+<!-- ======================= 登录界面 ======================= -->
+<div id="loginScreen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gradient-to-br from-indigo-600 via-blue-600 to-sky-500">
+  <div class="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-8">
+    <div class="text-center mb-6">
+      <div class="text-5xl mb-2">🏫</div>
+      <h1 class="text-2xl font-extrabold text-slate-800">计算机类2026-02班</h1>
+      <p class="text-sm text-slate-500 mt-1">使用学号 + 姓名 + 手机号登录</p>
+      <p id="supabaseStatus" class="text-xs mt-2 text-slate-400">正在连接 Supabase…</p>
+    </div>
+    <form id="loginForm" class="space-y-4" onsubmit="return false;" novalidate>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">学号</label>
+        <input id="loginStudentId" type="text" inputmode="numeric" autocomplete="off" placeholder="请输入学号"
+          class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-slate-800" />
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">姓名</label>
+        <input id="loginName" type="text" autocomplete="off" placeholder="请输入姓名"
+          class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-slate-800" />
+      </div>
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-1">手机号</label>
+        <input id="loginPhone" type="tel" inputmode="numeric" autocomplete="off" maxlength="11" placeholder="请输入 11 位手机号"
+          class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none text-slate-800" />
+      </div>
+      <button type="button" id="loginBtn"
+        class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-200 transition disabled:opacity-60 disabled:cursor-not-allowed">进入班级</button>
+      <p id="loginErr" class="hidden text-sm text-rose-600 text-center font-semibold bg-rose-50 border border-rose-200 rounded-lg px-3 py-2"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ======================= 主界面 ======================= -->
+<div id="app" class="hidden max-w-2xl mx-auto px-4 pb-10">
+
+  <nav class="sticky top-0 z-40 -mx-4 px-4 py-3 bg-white/90 backdrop-blur border-b border-slate-200">
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-2xl">🏫</span>
+        <div class="min-w-0">
+          <div class="font-extrabold text-lg text-slate-800 truncate">计算机类2026-02班</div>
+          <div id="navUser" class="text-xs text-slate-500 truncate">当前用户：</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-none">
+        <button id="adminBtn"
+          class="hidden px-3 py-2 rounded-xl bg-rose-100 text-rose-600 text-sm font-bold hover:bg-rose-200 transition">👥 班委管理</button>
+        <button id="logoutBtn"
+          class="px-3 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold transition">退出登录</button>
+      </div>
+    </div>
+  </nav>
+
+  <section class="mt-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-extrabold text-slate-800">📝 待办任务</h2>
+      <button id="addTaskBtn"
+        class="hidden px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow shadow-indigo-200 transition">＋ 发布任务</button>
+    </div>
+    <div id="taskList" class="space-y-2"></div>
+  </section>
+
+  <section class="mt-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-extrabold text-slate-800">🔔 重要提醒</h2>
+      <button id="addReminderBtn"
+        class="hidden px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow shadow-indigo-200 transition">＋ 发布提醒</button>
+    </div>
+    <div id="reminderList" class="space-y-2"></div>
+  </section>
+
+  <section class="mt-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-extrabold text-slate-800">🏫 晚自习教室</h2>
+      <button id="updateRoomBtn"
+        class="hidden px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow shadow-indigo-200 transition">＋ 更新教室</button>
+    </div>
+    <div id="roomList" class="space-y-2"></div>
+  </section>
+
+  <p class="text-center text-xs text-slate-400 mt-8">班级信息共享站 · 数据由班委维护</p>
+</div>
+
+<!-- ======================= 通用模态框 ======================= -->
+<div id="modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/50">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="modalTitle" class="text-lg font-extrabold text-slate-800">标题</h3>
+      <button id="modalClose" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold">✕</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- ======================= 班委管理模态框 ======================= -->
+<div id="adminModal" class="hidden fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 bg-slate-900/50 overflow-y-auto">
+  <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6 my-8">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-extrabold text-slate-800">👥 班委管理</h3>
+      <button id="adminClose" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold">✕</button>
+    </div>
+    <input id="adminSearch" type="text" placeholder="按学号或姓名搜索…"
+      class="w-full px-4 py-2.5 mb-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-sm" />
+    <div id="adminList" class="max-h-[50vh] overflow-y-auto divide-y divide-slate-100"></div>
+    <button id="adminSaveBtn"
+      class="w-full mt-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition">保存修改</button>
+  </div>
+</div>
+
+<!-- ======================= Toast ======================= -->
+<div id="toast" class="hidden fixed left-1/2 -translate-x-1/2 bottom-8 z-[60] px-5 py-2.5 rounded-xl bg-slate-800 text-white text-sm shadow-lg max-w-[90vw] text-center transition"></div>
+
+<script>
+/* ========== 全局 fetch 拦截：把 Supabase 请求改写到同域 /api（由 Netlify 转发） ========== */
+const SUPABASE_ORIGIN = 'https://lsgcfopolvfcczftvozm.supabase.co';
+const originalFetch = window.fetch;
+window.fetch = function(input, options) {
+  // 只改写 URL，options（含 apikey / Content-Type / Prefer 等 headers）原样透传，不破坏请求头
+  let proxied = false;
+  if (typeof input === 'string') {
+    if (input.startsWith(SUPABASE_ORIGIN)) {
+      input = input.replace(SUPABASE_ORIGIN, window.location.origin + '/api');
+      proxied = true;
+    }
+  } else if (input && typeof input.url === 'string' && input.url.startsWith(SUPABASE_ORIGIN)) {
+    input = new Request(input.url.replace(SUPABASE_ORIGIN, window.location.origin + '/api'), input);
+    proxied = true;
+  }
+  return originalFetch(input, options).then((resp) => {
+    if (proxied && !resp.ok) {
+      resp.clone().text().then((txt) => {
+        console.error('[代理调试] 状态码', resp.status, '响应体', txt ? txt.slice(0, 800) : '(空)');
+      });
+    }
+    return resp;
+  });
+};
+
+/* ========== 配置 ========== */
+const supabaseUrl = 'https://lsgcfopolvfcczftvozm.supabase.co';
+const supabaseKey = 'sb_publishable_n8wZBUJ8-VRTY9lWi0FKHQ_ECWDHe71';
+
+// 全班 31 人名单（登录纯前端比对，不发任何网络请求）
+const roster = [
+  { id: '08264081', name: '卫于钦', phone: '18834369731', role: 'super_admin' },
+  { id: '08262862', name: '何佳能', phone: '18325240330', role: 'member' },
+  { id: '08264897', name: '王建钢', phone: '15737731278', role: 'member' },
+  { id: '08264100', name: '朱铭予', phone: '19850257719', role: 'member' },
+  { id: '08262870', name: '陈坤伟', phone: '19098764637', role: 'member' },
+  { id: '08264898', name: '王亚琦', phone: '18530919566', role: 'member' },
+  { id: '08261208', name: '袁靖泰', phone: '15269210196', role: 'member' },
+  { id: '08260485', name: '都国斌', phone: '15620143677', role: 'member' },
+  { id: '08265760', name: '张文韬', phone: '18056082867', role: 'member' },
+  { id: '08264024', name: '孙欣傲', phone: '18118532057', role: 'member' },
+  { id: '08261247', name: '韩士奥', phone: '13969241662', role: 'member' },
+  { id: '08262111', name: '寇乐舟', phone: '15667685228', role: 'member' },
+  { id: '08264925', name: '陈皓哲', phone: '13617136009', role: 'member' },
+  { id: '08266177', name: '樊妍君', phone: '17309030216', role: 'member' },
+  { id: '08261262', name: '刘江鹏', phone: '15147469019', role: 'member' },
+  { id: '08261202', name: '韦盛天', phone: '18852132613', role: 'member' },
+  { id: '08262096', name: '廖文娴', phone: '18608425180', role: 'member' },
+  { id: '08262825', name: '刘逸', phone: '18533508415', role: 'member' },
+  { id: '08262106', name: '李昊哲', phone: '19733727031', role: 'member' },
+  { id: '08264087', name: '王昊东', phone: '15536118517', role: 'member' },
+  { id: '08261237', name: '张永泰', phone: '13562350189', role: 'member' },
+  { id: '08264088', name: '周洁', phone: '17352432186', role: 'member' },
+  { id: '08264073', name: '于鲲鹏', phone: '18852137713', role: 'member' },
+  { id: '08265768', name: '许修贤', phone: '15955647081', role: 'member' },
+  { id: '08261223', name: '葛晓丞', phone: '15265678028', role: 'member' },
+  { id: '08262070', name: '朱逸凡', phone: '18967144517', role: 'member' },
+  { id: '08260670', name: '黄梓萌', phone: '18294216626', role: 'member' },
+  { id: '08265393', name: '黄钰琪', phone: '13859736163', role: 'member' },
+  { id: '08264046', name: '刘力瑞', phone: '18752177050', role: 'member' },
+  { id: '08262850', name: '韩蕙多', phone: '15704124381', role: 'member' },
+  { id: '08262832', name: '王天一', phone: '18332193096', role: 'member' }
+];
+
+// Supabase 客户端（基础初始化，请求经全局 fetch 拦截走 /api 代理）
+let supabaseClient = null;
+try {
+  supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+} catch (e) {
+  supabaseClient = null;
+}
+
+/* ========== 常量与状态 ========== */
+const CLASS_NAME = '计算机类2026-02班';
+const USER_KEY = 'classhub_user';
+
+let currentUser = null;
+let tasks = [];
+let reminders = [];
+let rooms = {};
+let adminUsers = [];
+let adminChanges = {};
+
+// 静默轮询（伪实时）相关
+let pollTimer = null;
+let pollingBusy = false;
+let lastTasksSig = '';
+let lastRemindersSig = '';
+let lastRoomsSig = '';
+
+/* ========== 工具 ========== */
+const $ = (sel) => document.querySelector(sel);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = (n) => String(n).padStart(2, '0');
+const dateStr = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+const todayStr = () => dateStr(new Date());
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return dateStr(d); };
+const fmtDate = (s) => { const p = s.split('-'); return parseInt(p[1], 10) + '月' + parseInt(p[2], 10) + '日'; };
+
+/* 倒计时标签：逾期红 / 不足24h 橙 / 超过24h 蓝 */
+function dueLabel(dueAt) {
+  if (!dueAt) return '';
+  const ms = new Date(dueAt).getTime() - Date.now();
+  if (isNaN(ms)) return '';
+  if (ms <= 0) {
+    return '<span class="flex-none text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-600">已逾期</span>';
+  }
+  if (ms < 86400000) {
+    const hours = Math.ceil(ms / 3600000);
+    return '<span class="flex-none text-xs font-semibold px-2 py-1 rounded bg-orange-100 text-orange-600">剩余 ' + hours + ' 小时</span>';
+  }
+  const days = Math.floor(ms / 86400000);
+  return '<span class="flex-none text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-600">剩余 ' + days + ' 天</span>';
+}
+
+/* 发布人显示：学号转姓名，空则显示“班委” */
+function displayName(v) {
+  if (!v) return '班委';
+  const found = roster.find(u => u.id === v);
+  return found ? found.name : v;
+}
+
+/* ========== localStorage（try/catch 兜底，兼容追踪防护拦截） ========== */
+function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, val) { try { localStorage.setItem(key, val); } catch (e) { /* ignore */ } }
+function lsRemove(key) { try { localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+function loadUser() { try { return JSON.parse(lsGet(USER_KEY)); } catch (e) { return null; } }
+function saveUser(u) { lsSet(USER_KEY, JSON.stringify(u)); }
+/* 强制校验登录态：只认 localStorage，防篡改；未登录直接退回登录页 */
+function requireLogin() {
+  const user = loadUser();
+  if (!user || !user.student_id || !user.name) {
+    alert('请先登录');
+    showLogin();
+    return null;
+  }
+  currentUser = user; // 以 localStorage 为准，覆盖内存
+  return user;
+}
+function clearUser() { lsRemove(USER_KEY); }
+function loadData(key, def) { try { const v = lsGet(key); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
+function saveData(key, val) { lsSet(key, JSON.stringify(val)); }
+
+/* ========== 角色 ========== */
+const isStaff = () => !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'super_admin');
+const isSuperAdmin = () => !!currentUser && currentUser.role === 'super_admin';
+const roleLabel = (r) => r === 'super_admin' ? '班长' : r === 'admin' ? '班委' : '同学';
+
+/* 是否本人发布（兼容 created_by 存姓名或学号） */
+function isMine(item) {
+  if (!currentUser) return false;
+  const cb = (item && item.created_by) || '';
+  return cb === currentUser.name || cb === currentUser.student_id;
+}
+/* 任务/提醒的编辑删除权限：班长全部，班委仅本人，同学不可 */
+function canManage(item) {
+  if (!currentUser) return false;
+  if (currentUser.role === 'super_admin') return true;
+  if (currentUser.role === 'admin') return isMine(item);
+  return false;
+}
+/* 更新教室权限：班长 或 黄钰琪(08265393) */
+function canUpdateRooms() {
+  if (!currentUser) return false;
+  return currentUser.role === 'super_admin' || currentUser.name === '黄钰琪' || currentUser.student_id === '08265393';
+}
+
+/* ========== Toast ========== */
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.className = 'fixed left-1/2 -translate-x-1/2 bottom-8 z-[60] px-5 py-2.5 rounded-xl text-white text-sm shadow-lg max-w-[90vw] text-center transition ' + (isErr ? 'bg-rose-600' : 'bg-slate-800');
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 2400);
+}
+
+/* ========== 视图切换 ========== */
+function showLogin() {
+  $('#loginScreen').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+}
+function showApp() {
+  $('#loginScreen').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  render();
+  loadTasks();
+  loadReminders();
+  loadRooms();
+  refreshMyRole(); // 进主页立即同步一次最新身份
+  startPolling();
+}
+
+/* ========== 静默轮询（伪实时，3 秒一次） ========== */
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    if (pollingBusy) return;
+    pollingBusy = true;
+    try {
+      await Promise.all([loadTasks(true), loadReminders(true), loadRooms(true), refreshMyRole()]);
+    } catch (e) {
+      console.warn('轮询异常：', e);
+    } finally {
+      pollingBusy = false;
+    }
+  }, 3000);
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+/* ========== 登录 / 退出 ========== */
+function showLoginError(msg) {
+  const err = $('#loginErr');
+  if (!err) return;
+  if (msg) { err.textContent = msg; err.classList.remove('hidden'); }
+  else { err.textContent = ''; err.classList.add('hidden'); }
+}
+
+function login() {
+  const sid = $('#loginStudentId').value.trim();
+  const name = $('#loginName').value.trim();
+  const phone = $('#loginPhone').value.trim();
+
+  if (!sid || !name || !phone) { showLoginError('请填写学号、姓名和手机号'); return; }
+  if (!/^\d+$/.test(sid)) { showLoginError('学号只能包含数字'); return; }
+  if (phone.length !== 11) { showLoginError('手机号需为 11 位数字'); return; }
+
+  showLoginError('');
+
+  // 纯前端比对，不发任何网络请求
+  const matched = roster.find(u => u.id === sid && u.name === name && u.phone === phone);
+  if (matched) {
+    currentUser = { student_id: matched.id, name: matched.name, role: matched.role };
+    saveUser(currentUser);
+    alert('登录成功');
+    showApp();
+  } else {
+    alert('信息不匹配');
+  }
+}
+
+function logout() {
+  stopPolling();
+  clearUser();
+  currentUser = null;
+  showLogin();
+  toast('已退出登录');
+}
+
+/* ========== 渲染 ========== */
+function render() {
+  const role = currentUser ? currentUser.role : '';
+  $('#navUser').textContent = currentUser ? ('当前用户：' + currentUser.name + '（' + roleLabel(currentUser.role) + '）') : '';
+  // 发布类按钮：班长 + 班委 可见
+  const canPublish = (role === 'super_admin' || role === 'admin');
+  $('#addTaskBtn').classList.toggle('hidden', !canPublish);
+  $('#addReminderBtn').classList.toggle('hidden', !canPublish);
+  // 更新教室：仅班长 或 黄钰琪
+  $('#updateRoomBtn').classList.toggle('hidden', !canUpdateRooms());
+  // 班委管理按钮：仅班长可见
+  const isSuper = (role === 'super_admin');
+  $('#adminBtn').classList.toggle('hidden', !isSuper);
+  renderTasks();
+  renderReminders();
+  renderRooms();
+}
+
+/* ========== 待办任务 ========== */
+function renderTasks() {
+  const list = $('#taskList');
+  if (tasks.length === 0) {
+    list.innerHTML = '<div class="text-center text-sm text-slate-400 py-8 bg-white rounded-2xl border border-dashed border-slate-200">暂无任务</div>';
+    return;
+  }
+  const doneIds = loadCompleted();
+  // 已完成的排到列表后面
+  const ordered = tasks.slice().sort((a, b) => {
+    const da = doneIds.indexOf(a.id) !== -1 ? 1 : 0;
+    const db = doneIds.indexOf(b.id) !== -1 ? 1 : 0;
+    return da - db;
+  });
+  list.innerHTML = ordered.map(t => {
+    const done = doneIds.indexOf(t.id) !== -1;
+    const circle = done
+      ? '<button data-act="toggle" data-id="' + t.id + '" title="取消打卡" class="flex-none w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold">✓</button>'
+      : '<button data-act="toggle" data-id="' + t.id + '" title="标记完成" class="flex-none w-6 h-6 rounded-full border-2 border-slate-300 hover:border-emerald-400"></button>';
+    const badge = '<span class="flex-none text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">' + esc(t.category || '作业') + '</span>';
+    const due = dueLabel(t.due_at);
+    const canManageThis = canManage(t);
+    const edit = canManageThis
+      ? '<button data-act="edit" data-id="' + t.id + '" class="flex-none text-indigo-500 hover:text-indigo-700 text-sm font-semibold px-1">编辑</button>'
+      : '';
+    const del = canManageThis
+      ? '<button data-act="del" data-id="' + t.id + '" class="flex-none text-rose-500 hover:text-rose-700 text-sm font-semibold px-1">删除</button>'
+      : '';
+    return '<div class="' + (done ? 'bg-slate-50' : 'bg-white') + ' rounded-2xl px-4 py-3 shadow-sm border border-slate-100">' +
+      '<div class="flex items-center gap-2 min-w-0">' + circle +
+        '<div class="flex-1 min-w-0 font-medium break-words ' + (done ? 'text-gray-400 line-through' : 'text-slate-800') + '">' + esc(t.title) + '</div>' + due +
+      '</div>' +
+      '<div class="flex items-center gap-2 mt-1.5">' + badge +
+        '<span class="flex-1"></span>' +
+        '<span class="text-xs text-slate-400">发布人：' + esc(displayName(t.created_by)) + '</span>' + edit + del +
+      '</div>' +
+      '</div>';
+  }).join('');
+}
+function openTaskForm() {
+  openModal('发布任务',
+    '<input id="taskTitle" type="text" placeholder="任务内容，例如：交数学练习册" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<select id="taskCategory" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 bg-white">' +
+      '<option value="作业">作业</option><option value="任务">任务</option><option value="考试">考试</option><option value="其他">其他</option>' +
+    '</select>' +
+    '<label class="block text-xs font-semibold text-slate-500 mb-1">截止时间（必填）</label>' +
+    '<input id="taskDueAt" type="datetime-local" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<textarea id="taskDesc" rows="2" placeholder="补充说明（可选）" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 resize-none"></textarea>' +
+    '<button id="taskSubmitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">发布</button>');
+  document.getElementById('taskSubmitBtn').addEventListener('click', addTask);
+}
+async function loadTasks(silent) {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+  if (error) {
+    if (silent) { console.warn('轮询任务失败：', error); return; }
+    toast('加载任务失败：' + error.message, true);
+    return;
+  }
+  const next = (data || []).map(r => ({ id: r.id, title: r.title, category: r.category || '作业', is_important: !!r.is_important, due_at: r.due_at, created_by: r.created_by, description: r.description }));
+  const sig = JSON.stringify(next);
+  if (sig === lastTasksSig) return; // 数据未变，跳过重渲染，页面不闪烁
+  lastTasksSig = sig;
+  tasks = next;
+  renderTasks();
+}
+async function addTask() {
+  const user = requireLogin();
+  if (!user) return;
+  const title = $('#taskTitle').value.trim() || '未命名任务';
+  const category = ($('#taskCategory') && $('#taskCategory').value) || '作业';
+  const description = ($('#taskDesc') && $('#taskDesc').value.trim()) || null;
+  const dueRaw = ($('#taskDueAt') && $('#taskDueAt').value) || '';
+  const due_at = dueRaw ? new Date(dueRaw).toISOString() : new Date().toISOString();
+  const payload = {
+    title: title,
+    description: description,
+    category: category,
+    due_at: due_at,
+    is_important: false,
+    created_by: user.name
+  };
+  console.log('发布任务 payload：', payload);
+  if (!supabaseClient) { toast('云端未连接', true); return; }
+  const { error } = await supabaseClient.from('tasks').insert(payload);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  closeModal();
+  await loadTasks();
+  toast('任务已发布');
+}
+async function deleteTask(id) {
+  if (!confirm('确定要进行删除吗？删除后不可恢复。')) { return; }
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('tasks').delete().eq('id', id);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  await loadTasks();
+  toast('任务已删除');
+}
+
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function openTaskEdit(t) {
+  const cats = ['作业', '任务', '考试', '其他'];
+  const opts = cats.map(c => '<option value="' + c + '"' + (c === (t.category || '作业') ? ' selected' : '') + '>' + c + '</option>').join('');
+  openModal('编辑任务',
+    '<input id="editTaskTitle" type="text" value="' + esc(t.title) + '" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<select id="editTaskCategory" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 bg-white">' + opts + '</select>' +
+    '<label class="block text-xs font-semibold text-slate-500 mb-1">截止时间（必填）</label>' +
+    '<input id="editTaskDueAt" type="datetime-local" value="' + toLocalInput(t.due_at) + '" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<textarea id="editTaskDesc" rows="2" placeholder="补充说明（可选）" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 resize-none">' + esc(t.description || '') + '</textarea>' +
+    '<button id="editTaskSubmitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">保存修改</button>');
+  document.getElementById('editTaskSubmitBtn').addEventListener('click', () => saveTaskEdit(t.id));
+}
+async function saveTaskEdit(id) {
+  const title = $('#editTaskTitle').value.trim() || '未命名任务';
+  const category = $('#editTaskCategory').value || '作业';
+  const dueRaw = $('#editTaskDueAt').value || '';
+  const description = $('#editTaskDesc').value.trim() || null;
+  const payload = { title: title, category: category, description: description };
+  if (dueRaw) payload.due_at = new Date(dueRaw).toISOString();
+  if (!supabaseClient) { toast('云端未连接', true); return; }
+  const { error } = await supabaseClient.from('tasks').update(payload).eq('id', id);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  closeModal();
+  await loadTasks();
+  toast('任务已更新');
+}
+
+/* ========== 个人打卡（仅存本机 localStorage，不改数据库、不影响他人） ========== */
+function completedKey() {
+  return 'completed_tasks_' + (currentUser ? currentUser.student_id : 'guest');
+}
+function loadCompleted() {
+  try { return JSON.parse(lsGet(completedKey())) || []; } catch (e) { return []; }
+}
+function saveCompleted(ids) {
+  lsSet(completedKey(), JSON.stringify(ids));
+}
+function toggleTaskDone(id) {
+  const ids = loadCompleted();
+  const i = ids.indexOf(id);
+  if (i === -1) ids.push(id); else ids.splice(i, 1);
+  saveCompleted(ids);
+  renderTasks();
+}
+
+/* ========== 重要提醒 ========== */
+function renderReminders() {
+  const list = $('#reminderList');
+  if (reminders.length === 0) {
+    list.innerHTML = '<div class="text-center text-sm text-slate-400 py-8 bg-white rounded-2xl border border-dashed border-slate-200">暂无重要提醒</div>';
+    return;
+  }
+  list.innerHTML = reminders.map(r => {
+    const canManageThis = canManage(r);
+    const edit = canManageThis
+      ? '<button data-act="edit" data-id="' + r.id + '" class="flex-none text-indigo-500 hover:text-indigo-700 text-sm font-semibold px-1">编辑</button>'
+      : '';
+    const del = canManageThis
+      ? '<button data-act="del" data-id="' + r.id + '" class="flex-none text-rose-500 hover:text-rose-700 text-sm font-semibold px-1">删除</button>'
+      : '';
+    return '<div class="flex items-start gap-3 bg-amber-50 rounded-2xl px-4 py-3 border border-amber-100 shadow-sm">' +
+      '<span class="text-amber-500 text-lg">📌</span>' +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="text-slate-700 break-words">' + esc(r.text) + '</div>' +
+        '<div class="text-xs text-amber-600/70 mt-1">发布人：' + esc(displayName(r.created_by)) + '</div>' +
+      '</div>' + edit + del + '</div>';
+  }).join('');
+}
+function openReminderForm() {
+  openModal('发布提醒',
+    '<textarea id="reminderText" rows="3" placeholder="例如：明天早自习前交数学练习册" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 resize-none"></textarea>' +
+    '<button id="reminderSubmitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">发布</button>');
+  document.getElementById('reminderSubmitBtn').addEventListener('click', addReminder);
+}
+async function loadReminders(silent) {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient.from('announcements').select('*').order('created_at', { ascending: false });
+  if (error) {
+    if (silent) { console.warn('轮询提醒失败：', error); return; }
+    toast('加载提醒失败：' + error.message, true);
+    return;
+  }
+  const next = (data || []).map(r => ({ id: r.id, text: r.content, created_by: r.created_by }));
+  const sig = JSON.stringify(next);
+  if (sig === lastRemindersSig) return; // 数据未变，跳过重渲染
+  lastRemindersSig = sig;
+  reminders = next;
+  renderReminders();
+}
+async function addReminder() {
+  const user = requireLogin();
+  if (!user) return;
+  const text = $('#reminderText').value.trim() || '（无内容提醒）';
+  const payload = {
+    content: text,
+    is_pinned: false,
+    created_by: user.name
+  };
+  console.log('发布提醒 payload：', payload);
+  if (!supabaseClient) { toast('云端未连接', true); return; }
+  const { error } = await supabaseClient.from('announcements').insert(payload);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  closeModal();
+  await loadReminders();
+  toast('提醒已发布');
+}
+async function deleteReminder(id) {
+  if (!confirm('确定要进行删除吗？删除后不可恢复。')) { return; }
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.from('announcements').delete().eq('id', id);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  await loadReminders();
+  toast('提醒已删除');
+}
+
+function openReminderEdit(r) {
+  openModal('编辑提醒',
+    '<textarea id="editReminderText" rows="3" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3 resize-none">' + esc(r.text || '') + '</textarea>' +
+    '<button id="editReminderSubmitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">保存修改</button>');
+  document.getElementById('editReminderSubmitBtn').addEventListener('click', () => saveReminderEdit(r.id));
+}
+async function saveReminderEdit(id) {
+  const text = $('#editReminderText').value.trim() || '（无内容提醒）';
+  if (!supabaseClient) { toast('云端未连接', true); return; }
+  const { error } = await supabaseClient.from('announcements').update({ content: text }).eq('id', id);
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  closeModal();
+  await loadReminders();
+  toast('提醒已更新');
+}
+
+/* ========== 晚自习教室 ========== */
+function renderRooms() {
+  const list = $('#roomList');
+  const today = todayStr(), tomorrow = tomorrowStr();
+  const tInfo = rooms[today], mInfo = rooms[tomorrow];
+  const card = (label, date, info) =>
+    '<div class="bg-white rounded-2xl px-4 py-3 shadow-sm border border-slate-100">' +
+      '<div class="text-sm font-bold text-indigo-600">' + label + ' · ' + fmtDate(date) + '</div>' +
+      '<div class="text-slate-800 font-semibold mt-1">' + (info && info.room ? esc(info.room) : '暂未更新') + '</div>' +
+      '<div class="text-xs text-slate-500 mt-0.5">' + (info && info.note ? esc(info.note) : '等待班委发布') + '</div>' +
+    '</div>';
+  list.innerHTML = card('今天', today, tInfo) + card('明天', tomorrow, mInfo);
+}
+function openRoomForm() {
+  if (!canUpdateRooms()) { alert('无权限操作'); return; }
+  openModal('更新教室',
+    '<div class="mb-3">' +
+      '<label class="block text-sm font-semibold text-slate-700 mb-1">日期</label>' +
+      '<select id="roomDate" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none">' +
+        '<option value="' + todayStr() + '">今天</option><option value="' + tomorrowStr() + '">明天</option>' +
+      '</select>' +
+    '</div>' +
+    '<input id="roomName" type="text" placeholder="教室，例如：教学楼 A-301" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<input id="roomNote" type="text" placeholder="备注（可选），例如：18:30 前到" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none mb-3" />' +
+    '<button id="roomSubmitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">保存</button>');
+  document.getElementById('roomSubmitBtn').addEventListener('click', saveRoom);
+}
+async function loadRooms(silent) {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient.from('classroom_updates').select('*');
+  if (error) {
+    if (silent) { console.warn('轮询教室失败：', error); return; }
+    toast('加载教室失败：' + error.message, true);
+    return;
+  }
+  const next = {};
+  (data || []).forEach(r => { next[r.date] = { room: r.classroom, note: r.note || '' }; });
+  const sig = JSON.stringify(next);
+  if (sig === lastRoomsSig) return; // 数据未变，跳过重渲染
+  lastRoomsSig = sig;
+  rooms = next;
+  renderRooms();
+}
+async function saveRoom() {
+  const user = requireLogin();
+  if (!user) return;
+  const date = ($('#roomDate').value || todayStr()).slice(0, 10);
+  const room = $('#roomName').value.trim() || '未填写';
+  const note = $('#roomNote').value.trim() || null;
+  const payload = {
+    date: date,
+    classroom: room,
+    note: note,
+    updated_by: user.name
+  };
+  console.log('更新教室 payload：', payload);
+  if (!supabaseClient) { toast('云端未连接', true); return; }
+  const { error } = await supabaseClient.from('classroom_updates').upsert(payload, { onConflict: 'date' });
+  if (error) { alert('失败详情：' + JSON.stringify(error)); return; }
+  closeModal();
+  await loadRooms();
+  toast('教室已更新');
+}
+
+/* ========== 班委管理 ========== */
+function openAdmin() {
+  if (!currentUser || currentUser.role !== 'super_admin') { alert('无权限操作'); return; }
+  $('#adminModal').classList.remove('hidden');
+  $('#adminSearch').value = '';
+  adminChanges = {};
+  loadAdminList();
+}
+function closeAdmin() {
+  $('#adminModal').classList.add('hidden');
+}
+async function loadAdminList() {
+  const list = $('#adminList');
+  list.innerHTML = '<div class="text-center text-sm text-slate-400 py-6">加载中…</div>';
+  try {
+    const { data, error } = await supabaseClient.from('class_roster').select('student_id, name, role');
+    if (error) {
+      alert('班委列表加载失败：' + JSON.stringify(error));
+      list.innerHTML = '<div class="text-center text-sm text-rose-500 py-6">加载失败：' + esc(error.message || error.details || '未知错误') + '</div>';
+      return;
+    }
+    adminUsers = data || [];
+    adminChanges = {};
+    renderAdminList();
+  } catch (err) {
+    alert('班委列表加载失败：' + JSON.stringify(err));
+    list.innerHTML = '<div class="text-center text-sm text-rose-500 py-6">加载失败</div>';
+  }
+}
+function renderAdminList() {
+  const list = $('#adminList');
+  const q = $('#adminSearch').value.trim().toLowerCase();
+  const selfId = currentUser ? currentUser.student_id : '';
+  const rows = adminUsers.filter(u =>
+    !q || ((u.name || '').toLowerCase().includes(q)) || ((u.student_id || '').toLowerCase().includes(q))
+  ).sort((a, b) => {
+    const ra = a.role === 'super_admin' ? 0 : 1, rb = b.role === 'super_admin' ? 0 : 1;
+    return ra - rb || (a.student_id || '').localeCompare(b.student_id || '');
+  });
+  if (rows.length === 0) {
+    list.innerHTML = '<div class="text-center text-sm text-slate-400 py-6">没有匹配的同学</div>';
+    return;
+  }
+  list.innerHTML = rows.map(u => {
+    const isSelf = u.student_id === selfId;
+    let roleCell;
+    if (u.role === 'super_admin') {
+      roleCell = '<span class="flex-none px-2.5 py-1 rounded-lg bg-rose-100 text-rose-600 text-xs font-bold">班长(super_admin)</span>';
+    } else {
+      const cur = adminChanges[u.student_id] || u.role;
+      roleCell = '<select data-sid="' + esc(u.student_id) + '" class="flex-none px-2 py-1 rounded-lg border border-slate-200 text-sm outline-none focus:border-indigo-500">' +
+        '<option value="member"' + (cur === 'member' ? ' selected' : '') + '>同学(member)</option>' +
+        '<option value="admin"' + (cur === 'admin' ? ' selected' : '') + '>班委(admin)</option>' +
+      '</select>';
+    }
+    return '<div class="flex items-center gap-3 py-3">' +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="font-semibold text-slate-800 truncate">' + esc(u.name || '未填写') + (isSelf ? ' <span class="text-rose-500">（我）</span>' : '') + '</div>' +
+        '<div class="text-xs text-slate-500">学号 ' + esc(u.student_id || '-') + '</div>' +
+      '</div>' + roleCell + '</div>';
+  }).join('');
+}
+function onAdminRoleChange(sel) {
+  const sid = sel.getAttribute('data-sid');
+  const newRole = sel.value;
+  const u = adminUsers.find(x => x.student_id === sid);
+  if (u && u.role === newRole) delete adminChanges[sid];
+  else adminChanges[sid] = newRole;
+}
+async function saveAdminRoles() {
+  if (!currentUser || currentUser.role !== 'super_admin') { alert('无权限操作'); return; }
+  const ids = Object.keys(adminChanges);
+  if (ids.length === 0) { toast('没有需要保存的修改'); return; }
+  const btn = $('#adminSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  try {
+    for (const sid of ids) {
+      const res = await supabaseClient.from('class_roster').update({ role: adminChanges[sid] }).eq('student_id', sid);
+      if (res.error) throw res.error;
+    }
+    toast('已保存 ' + ids.length + ' 项修改');
+    await loadAdminList();
+  } catch (error) {
+    alert('失败原因：' + JSON.stringify(error));
+  } finally {
+    btn.disabled = false; btn.textContent = '保存修改';
+  }
+}
+
+/* ========== 同步当前用户角色（以数据库为准） ========== */
+async function refreshMyRole() {
+  if (!supabaseClient || !currentUser || !currentUser.student_id) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('class_roster')
+      .select('role')
+      .eq('student_id', currentUser.student_id)
+      .maybeSingle();
+    if (error) { console.warn('同步角色失败：', error); return; }
+    if (data && data.role && data.role !== currentUser.role) {
+      const oldLabel = roleLabel(currentUser.role);
+      currentUser.role = data.role;
+      saveUser(currentUser);
+      render();
+      toast('身份已更新：' + oldLabel + ' → ' + roleLabel(currentUser.role));
+    }
+  } catch (e) {
+    console.warn('同步角色异常：', e);
+  }
+}
+
+/* ========== 通用模态框 ========== */
+function openModal(title, body) {
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = body;
+  $('#modal').classList.remove('hidden');
+}
+function closeModal() {
+  $('#modal').classList.add('hidden');
+  $('#modalBody').innerHTML = '';
+}
+
+/* ========== 初始化 ========== */
+function init() {
+  const statusEl = $('#supabaseStatus');
+  if (statusEl) {
+    if (supabaseClient) {
+      statusEl.textContent = '✅ Supabase 已连接';
+      statusEl.className = 'text-xs mt-2 text-emerald-600 font-semibold';
+    } else {
+      statusEl.textContent = '⚠️ 云端功能不可用（登录仍可本地校验）';
+      statusEl.className = 'text-xs mt-2 text-rose-600 font-semibold';
+    }
+  }
+
+  const user = loadUser();
+  if (user && user.student_id) {
+    currentUser = user;
+    showApp();
+  } else {
+    showLogin();
+  }
+}
+
+/* ========== 事件绑定（全部 addEventListener，无内联 onclick） ========== */
+function bindEvents() {
+  document.getElementById('loginBtn').addEventListener('click', (e) => { e.preventDefault(); login(); });
+  document.getElementById('loginForm').addEventListener('submit', (e) => { e.preventDefault(); login(); });
+  document.getElementById('loginStudentId').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+  document.getElementById('loginPhone').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 11); });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+  document.getElementById('adminBtn').addEventListener('click', openAdmin);
+  document.getElementById('addTaskBtn').addEventListener('click', openTaskForm);
+  document.getElementById('addReminderBtn').addEventListener('click', openReminderForm);
+  document.getElementById('updateRoomBtn').addEventListener('click', openRoomForm);
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('adminClose').addEventListener('click', closeAdmin);
+  document.getElementById('adminSaveBtn').addEventListener('click', saveAdminRoles);
+  document.getElementById('adminSearch').addEventListener('input', () => renderAdminList());
+
+  document.getElementById('taskList').addEventListener('click', (e) => {
+    const toggleBtn = e.target.closest('[data-act="toggle"]');
+    if (toggleBtn) { e.preventDefault(); toggleTaskDone(toggleBtn.getAttribute('data-id')); return; }
+    const editBtn = e.target.closest('[data-act="edit"]');
+    if (editBtn) { const t = tasks.find(x => x.id === editBtn.getAttribute('data-id')); if (t) openTaskEdit(t); return; }
+    const delBtn = e.target.closest('[data-act="del"]');
+    if (delBtn) deleteTask(delBtn.getAttribute('data-id'));
+  });
+  document.getElementById('reminderList').addEventListener('click', (e) => {
+    const editBtn = e.target.closest('[data-act="edit"]');
+    if (editBtn) { const r = reminders.find(x => x.id === editBtn.getAttribute('data-id')); if (r) openReminderEdit(r); return; }
+    const btn = e.target.closest('[data-act="del"]');
+    if (btn) deleteReminder(btn.getAttribute('data-id'));
+  });
+  document.getElementById('adminList').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-sid]');
+    if (sel) onAdminRoleChange(sel);
+  });
+
+  document.getElementById('modal').addEventListener('click', (e) => { if (e.target === document.getElementById('modal')) closeModal(); });
+  document.getElementById('adminModal').addEventListener('click', (e) => { if (e.target === document.getElementById('adminModal')) closeAdmin(); });
+}
+
+// 脚本位于 body 末尾，DOM 已就绪，直接绑定并初始化
+bindEvents();
+init();
+</script>
+</body>
+</html>
